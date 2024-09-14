@@ -1274,18 +1274,18 @@ def mux_process(video_title, video_filepath, audio_filepath, output_path):
     transcode = "-hwaccel cuda -hwaccel_output_format cuda" if use_nvenc else ""
     if os.name == "nt":
         if use_h265:
-            command = 'ffmpeg {} -y -i "{}" -i "{}" -c:v {} -vtag hvc1 -crf {} -preset {} -c:a copy -fflags +bitexact -map_metadata -1 -metadata title="{}" "{}"'.format(
+            command = 'ffmpeg -loglevel panic {} -y -i "{}" -i "{}" -c:v {} -vtag hvc1 -crf {} -preset {} -c:a copy -fflags +bitexact -map_metadata -1 -metadata title="{}" "{}"'.format(
                 transcode, video_filepath, audio_filepath, codec, h265_crf, h265_preset, video_title, output_path
             )
         else:
-            command = 'ffmpeg -y -i "{}" -i "{}" -c:v copy -c:a copy -fflags +bitexact -map_metadata -1 -metadata title="{}" "{}"'.format(video_filepath, audio_filepath, video_title, output_path)
+            command = 'ffmpeg -loglevel panic -y -i "{}" -i "{}" -c:v copy -c:a copy -fflags +bitexact -map_metadata -1 -metadata title="{}" "{}"'.format(video_filepath, audio_filepath, video_title, output_path)
     else:
         if use_h265:
-            command = 'nice -n 7 ffmpeg {} -y -i "{}" -i "{}" -c:v libx265 -vtag hvc1 -crf {} -preset {} -c:a copy -fflags +bitexact -map_metadata -1 -metadata title="{}" "{}"'.format(
+            command = 'nice -n 7 ffmpeg -loglevel panic {} -y -i "{}" -i "{}" -c:v libx265 -vtag hvc1 -crf {} -preset {} -c:a copy -fflags +bitexact -map_metadata -1 -metadata title="{}" "{}"'.format(
                 transcode, video_filepath, audio_filepath, codec, h265_crf, h265_preset, video_title, output_path
             )
         else:
-            command = 'nice -n 7 ffmpeg -y -i "{}" -i "{}" -c:v copy -c:a copy -fflags +bitexact -shortest -map_metadata -1 -metadata title="{}" "{}"'.format(
+            command = 'nice -n 7 ffmpeg -loglevel panic -y -i "{}" -i "{}" -c:v copy -c:a copy -fflags +bitexact -shortest -map_metadata -1 -metadata title="{}" "{}"'.format(
                 video_filepath, audio_filepath, video_title, output_path
             )
 

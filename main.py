@@ -8,9 +8,10 @@ import re
 import subprocess
 import sys
 import time
+from http.cookiejar import MozillaCookieJar
 from html.parser import HTMLParser as compat_HTMLParser
 from pathlib import Path
-from typing import IO
+from typing import IO, Union
 
 import browser_cookie3
 import m3u8
@@ -44,7 +45,7 @@ portal_name = None
 course_name = None
 keep_vtt = False
 skip_hls = False
-concurrent_downloads = 10
+concurrent_downloads = 10000
 disable_ipv6 = False
 save_to_file = True
 load_from_file = None
@@ -207,6 +208,7 @@ def pre_run():
             "chromium",
             "vivaldi",
             "safari",
+            "file"
         ],
     )
     parser.add_argument(
@@ -273,10 +275,10 @@ def pre_run():
 
         if concurrent_downloads <= 0:
             # if the user gave a number that is less than or equal to 0, set cc to default of 10
-            concurrent_downloads = 10
+            concurrent_downloads = 10000
         elif concurrent_downloads > 30:
             # if the user gave a number thats greater than 30, set cc to the max of 30
-            concurrent_downloads = 30
+            concurrent_downloads = 10000
     if args.disable_ipv6:
         disable_ipv6 = args.disable_ipv6
     if args.load_from_file:
@@ -398,6 +400,10 @@ class Udemy:
                 cj = browser_cookie3.chromium()
             elif browser == "vivaldi":
                 cj = browser_cookie3.vivaldi()
+            elif browser == "file":
+                # load netscape cookies from file
+                cj = MozillaCookieJar("cookies.txt")
+                cj.load()
 
     def _get_quiz(self, quiz_id):
         self.session._headers.update(

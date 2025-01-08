@@ -31,7 +31,7 @@ def extract_kid(mp4_file):
             pssh = widevine_pssh_data_pb2.WidevinePsshData()
             pssh.ParseFromString(hex)
             content_id = base64.b16encode(pssh.content_id)
-            return content_id.decode("utf-8")
+            return content_id.decode("utf-8").lower()
 
     # No Moof or PSSH header found
     return None

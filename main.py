@@ -589,7 +589,12 @@ class Udemy:
         temp_path.mkdir(parents=True, exist_ok=True)
 
         # # extract the asset id from the url
-        asset_id = asset_id_re.search(url).group("id")
+        match = asset_id_re.search(url)
+        if match:
+            asset_id = match.group("id")
+        else:
+            logger.error(f"Unable to extract asset id from url: {url}")
+            return _temp
 
         m3u8_path = Path(temp_path, f"index_{asset_id}.m3u8")
 

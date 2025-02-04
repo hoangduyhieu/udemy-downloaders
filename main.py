@@ -38,7 +38,7 @@ dl_assets = False
 dl_captions = False
 dl_quizzes = False
 skip_lectures = False
-caption_locale = "en"
+caption_locale = ["en"]  # Changed from string to list
 quality = None
 bearer_token = None
 portal_name = None
@@ -61,6 +61,10 @@ use_nvenc = False
 browser = None
 cj = None
 use_continuous_lecture_numbers = False
+start_chapter = None
+end_chapter = None
+start_lecture = None 
+end_lecture = None
 
 
 # from https://stackoverflow.com/a/21978778/9785713
@@ -73,7 +77,7 @@ def log_subprocess_output(prefix: str, pipe: IO[bytes]):
 
 # this is the first function that is called, we parse the arguments, setup the logger, and ensure that required directories exist
 def pre_run():
-    global dl_assets, dl_captions, dl_quizzes, skip_lectures, caption_locale, quality, bearer_token, course_name, keep_vtt, skip_hls, concurrent_downloads, disable_ipv6, load_from_file, save_to_file, bearer_token, course_url, info, logger, keys, id_as_course_name, LOG_LEVEL, use_h265, h265_crf, h265_preset, use_nvenc, browser, is_subscription_course, DOWNLOAD_DIR, use_continuous_lecture_numbers
+    global dl_assets, dl_captions, dl_quizzes, skip_lectures, caption_locale, quality, bearer_token, course_name, keep_vtt, skip_hls, concurrent_downloads, disable_ipv6, load_from_file, save_to_file, bearer_token, course_url, info, logger, keys, id_as_course_name, LOG_LEVEL, use_h265, h265_crf, h265_preset, use_nvenc, browser, is_subscription_course, DOWNLOAD_DIR, use_continuous_lecture_numbers, start_chapter, end_chapter, start_lecture, end_lecture
 
     # make sure the logs directory exists
     if not os.path.exists(LOG_DIR_PATH):
@@ -232,13 +236,39 @@ def pre_run():
         action="store_true",
         help="Use continuous lecture numbering instead of per-chapter",
     )
+    parser.add_argument(
+        "--start-chapter",
+        dest="start_chapter", 
+        type=int,
+        help="Start downloading from this chapter number"
+    )
+    parser.add_argument(
+        "--start-lecture",
+        dest="start_lecture",
+        type=int, 
+        help="Start downloading from this lecture number within the start chapter"
+    )
+    parser.add_argument(
+        "--end-chapter",
+        dest="end_chapter",
+        type=int,
+        help="Stop downloading at this chapter number"
+    )
+    parser.add_argument(
+        "--end-lecture", 
+        dest="end_lecture",
+        type=int,
+        help="Stop downloading at this lecture number within the end chapter"
+    )
     # parser.add_argument("-v", "--version", action="version", version="You are running version {version}".format(version=__version__))
 
     args = parser.parse_args()
     if args.download_assets:
         dl_assets = True
     if args.lang:
-        caption_locale = args.lang
+        caption_locale = args.lang.split(',')  # Now stores a list of languages
+    else:
+        caption_locale = ["en"]  # Default to a list with just "en"
     if args.download_captions:
         dl_captions = True
     if args.download_quizzes:
@@ -304,6 +334,20 @@ def pre_run():
         DOWNLOAD_DIR = os.path.abspath(args.out)
     if args.use_continuous_lecture_numbers:
         use_continuous_lecture_numbers = args.use_continuous_lecture_numbers
+    if args.start_chapter:
+        start_chapter = args.start_chapter
+    if args.start_lecture:
+        if not args.start_chapter:
+            logger.error("When using --start-lecture please provide --start-chapter")
+            sys.exit(1)
+        start_lecture = args.start_lecture
+    if args.end_chapter:
+        end_chapter = args.end_chapter
+    if args.end_lecture:
+        if not args.end_chapter:
+            logger.error("When using --end-lecture please provide --end-chapter") 
+            sys.exit(1)
+        end_lecture = args.end_lecture
 
     # setup a logger
     logger = logging.getLogger(__name__)
@@ -1708,6 +1752,32 @@ def process_coding_assignment(quiz, lecture, chapter_dir):
             f.write(html)
 
 
+def is_in_chapter_range(chapter_index):
+    """Check if the chapter is within the specified range"""
+    if start_chapter and chapter_index < start_chapter:
+        return False
+    if end_chapter and chapter_index > end_chapter:
+        return False
+    return True
+
+def is_in_lecture_range(chapter_index, lecture_index):
+    """Check if the lecture is within the specified range"""
+    # If outside chapter range, lecture is out of range
+    if not is_in_chapter_range(chapter_index):
+        return False
+        
+    # If in start chapter, check start lecture
+    if start_chapter and chapter_index == start_chapter and start_lecture:
+        if lecture_index < start_lecture:
+            return False
+            
+    # If in end chapter, check end lecture  
+    if end_chapter and chapter_index == end_chapter and end_lecture:
+        if lecture_index > end_lecture:
+            return False
+            
+    return True
+
 def parse_new(udemy: Udemy, udemy_object: dict):
     total_chapters = udemy_object.get("total_chapters")
     total_lectures = udemy_object.get("total_lectures")
@@ -1726,6 +1796,10 @@ def parse_new(udemy: Udemy, udemy_object: dict):
         if not os.path.exists(chapter_dir):
             os.mkdir(chapter_dir)
         logger.info(f"======= Processing chapter {chapter_index} of {total_chapters} =======")
+
+        # Skip if chapter not in range
+        if not is_in_chapter_range(chapter_index):
+            continue
 
         for lecture in chapter.get("lectures"):
             clazz = lecture.get("_class")
@@ -1750,6 +1824,10 @@ def parse_new(udemy: Udemy, udemy_object: dict):
                 extension = lecture_extension
             lecture_file_name = sanitize_filename(lecture_title + "." + extension)
             lecture_path = os.path.join(chapter_dir, lecture_file_name)
+
+            # Skip if lecture not in range
+            if not is_in_lecture_range(chapter_index, index):
+                continue
 
             if not skip_lectures:
                 logger.info(f"  > Processing lecture {index} of {total_lectures}")
@@ -1779,7 +1857,8 @@ def parse_new(udemy: Udemy, udemy_object: dict):
                 logger.info("Processing {} caption(s)...".format(len(subtitles)))
                 for subtitle in subtitles:
                     lang = subtitle.get("language")
-                    if lang == caption_locale or caption_locale == "all":
+                    # Check if the language is in our list of requested languages or if we want all captions
+                    if lang in caption_locale or "all" in caption_locale:
                         process_caption(subtitle, lecture_title, chapter_dir)
 
             if dl_assets:

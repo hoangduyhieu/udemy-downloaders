@@ -90,6 +90,7 @@ usage: main.py [-h] -c COURSE_URL [-b BEARER_TOKEN] [-q QUALITY] [-l LANG] [-cd 
                [--download-captions] [--download-quizzes] [--keep-vtt] [--skip-hls] [--info] [--id-as-course-name] [-sc] [--save-to-file] [--load-from-file]
                [--log-level LOG_LEVEL] [--browser {chrome,firefox,opera,edge,brave,chromium,vivaldi,safari}] [--use-h265] [--h265-crf H265_CRF] [--h265-preset H265_PRESET]
                [--use-nvenc] [--out OUT] [--continue-lecture-numbers]
+               [--chapter CHAPTER_FILTER_RAW]
 
 Udemy Downloader
 
@@ -132,6 +133,8 @@ options:
   --out OUT, -o OUT     Set the path to the output directory
   --continue-lecture-numbers, -n
                         Use continuous lecture numbering instead of per-chapter
+  --chapter CHAPTER_FILTER_RAW
+                        Download specific chapters. Use comma separated values and ranges (e.g., 1,3-5,7,9-11)
 ```
 
 -   Passing a Bearer Token and Course ID as an argument
@@ -149,7 +152,7 @@ options:
     -   `python main.py -c <Course URL> --download-captions -l en` - English subtitles
     -   `python main.py -c <Course URL> --download-captions -l es` - Spanish subtitles
     -   `python main.py -c <Course URL> --download-captions -l it` - Italian subtitles
-    -   `python main.py -c <Course URL> --download-captions -l pl` - Polish Subtitles
+    -   `python main.py -c <Course URL> --download-captions -l en,vi` - English and Vietnameses Subtitles
     -   `python main.py -c <Course URL> --download-captions -l all` - Downloads all subtitles
     -   etc
 -   Skip downloading lecture videos
@@ -186,6 +189,10 @@ options:
 -   Use continuous numbering (don't restart at 1 in every chapter):
     -   `python main.py -c <Course URL> --continue-lecture-numbers`
     -   `python main.py -c <Course URL> -n`
+-   Download specific chapters:
+    - `python main.py -c <Course URL> --chapter 1,3,5` - Downloads chapters 1, 3, and 5
+    - `python main.py -c <Course URL> --chapter 1-5` - Downloads chapters 1 through 5
+    - `python main.py -c <Course URL> --chapter 1,3-5,7,9-11` - Downloads chapters 1, 3 through 5, 7, and 9 through 11
 
 If you encounter errors while downloading such as
 

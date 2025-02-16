@@ -61,11 +61,7 @@ use_nvenc = False
 browser = None
 cj = None
 use_continuous_lecture_numbers = False
-start_chapter = None
-end_chapter = None
-start_lecture = None 
-end_lecture = None
-
+chapter_filter = None
 
 # from https://stackoverflow.com/a/21978778/9785713
 def log_subprocess_output(prefix: str, pipe: IO[bytes]):
@@ -74,10 +70,31 @@ def log_subprocess_output(prefix: str, pipe: IO[bytes]):
             logger.debug("[%s]: %r", prefix, line.decode("utf8").strip())
         pipe.flush()
 
+def parse_chapter_filter(chapter_str: str):
+    """
+    Given a string like "1,3-5,7,9-11", return a set of chapter numbers.
+    """
+    chapters = set()
+    for part in chapter_str.split(','):
+        if '-' in part:
+            try:
+                start, end = part.split('-')
+                start = int(start.strip())
+                end = int(end.strip())
+                chapters.update(range(start, end + 1))
+            except ValueError:
+                logger.error("Invalid range in --chapter argument: %s", part)
+        else:
+            try:
+                chapters.add(int(part.strip()))
+            except ValueError:
+                logger.error("Invalid chapter number in --chapter argument: %s", part)
+    return chapters
+
 
 # this is the first function that is called, we parse the arguments, setup the logger, and ensure that required directories exist
 def pre_run():
-    global dl_assets, dl_captions, dl_quizzes, skip_lectures, caption_locale, quality, bearer_token, course_name, keep_vtt, skip_hls, concurrent_downloads, disable_ipv6, load_from_file, save_to_file, bearer_token, course_url, info, logger, keys, id_as_course_name, LOG_LEVEL, use_h265, h265_crf, h265_preset, use_nvenc, browser, is_subscription_course, DOWNLOAD_DIR, use_continuous_lecture_numbers, start_chapter, end_chapter, start_lecture, end_lecture
+    global dl_assets, dl_captions, dl_quizzes, skip_lectures, caption_locale, quality, bearer_token, course_name, keep_vtt, skip_hls, concurrent_downloads, disable_ipv6, load_from_file, save_to_file, bearer_token, course_url, info, logger, keys, id_as_course_name, LOG_LEVEL, use_h265, h265_crf, h265_preset, use_nvenc, browser, is_subscription_course, DOWNLOAD_DIR, use_continuous_lecture_numbers, chapter_filter
 
     # make sure the logs directory exists
     if not os.path.exists(LOG_DIR_PATH):
@@ -237,28 +254,10 @@ def pre_run():
         help="Use continuous lecture numbering instead of per-chapter",
     )
     parser.add_argument(
-        "--start-chapter",
-        dest="start_chapter", 
-        type=int,
-        help="Start downloading from this chapter number"
-    )
-    parser.add_argument(
-        "--start-lecture",
-        dest="start_lecture",
-        type=int, 
-        help="Start downloading from this lecture number within the start chapter"
-    )
-    parser.add_argument(
-        "--end-chapter",
-        dest="end_chapter",
-        type=int,
-        help="Stop downloading at this chapter number"
-    )
-    parser.add_argument(
-        "--end-lecture", 
-        dest="end_lecture",
-        type=int,
-        help="Stop downloading at this lecture number within the end chapter"
+        "--chapter",
+        dest="chapter_filter_raw",
+        type=str,
+        help="Download specific chapters. Use comma separated values and ranges (e.g., '1,3-5,7,9-11').",
     )
     # parser.add_argument("-v", "--version", action="version", version="You are running version {version}".format(version=__version__))
 
@@ -334,20 +333,6 @@ def pre_run():
         DOWNLOAD_DIR = os.path.abspath(args.out)
     if args.use_continuous_lecture_numbers:
         use_continuous_lecture_numbers = args.use_continuous_lecture_numbers
-    if args.start_chapter:
-        start_chapter = args.start_chapter
-    if args.start_lecture:
-        if not args.start_chapter:
-            logger.error("When using --start-lecture please provide --start-chapter")
-            sys.exit(1)
-        start_lecture = args.start_lecture
-    if args.end_chapter:
-        end_chapter = args.end_chapter
-    if args.end_lecture:
-        if not args.end_chapter:
-            logger.error("When using --end-lecture please provide --end-chapter") 
-            sys.exit(1)
-        end_lecture = args.end_lecture
 
     # setup a logger
     logger = logging.getLogger(__name__)
@@ -385,6 +370,11 @@ def pre_run():
     else:
         logger.warning("> Keyfile not found! You won't be able to decrypt videos!")
 
+    # Process the chapter filter
+    if args.chapter_filter_raw:
+        chapter_filter = parse_chapter_filter(args.chapter_filter_raw)
+        logger.info("Chapter filter applied: %s", sorted(chapter_filter))
+        
 
 class Udemy:
     def __init__(self, bearer_token):
@@ -1752,32 +1742,6 @@ def process_coding_assignment(quiz, lecture, chapter_dir):
             f.write(html)
 
 
-def is_in_chapter_range(chapter_index):
-    """Check if the chapter is within the specified range"""
-    if start_chapter and chapter_index < start_chapter:
-        return False
-    if end_chapter and chapter_index > end_chapter:
-        return False
-    return True
-
-def is_in_lecture_range(chapter_index, lecture_index):
-    """Check if the lecture is within the specified range"""
-    # If outside chapter range, lecture is out of range
-    if not is_in_chapter_range(chapter_index):
-        return False
-        
-    # If in start chapter, check start lecture
-    if start_chapter and chapter_index == start_chapter and start_lecture:
-        if lecture_index < start_lecture:
-            return False
-            
-    # If in end chapter, check end lecture  
-    if end_chapter and chapter_index == end_chapter and end_lecture:
-        if lecture_index > end_lecture:
-            return False
-            
-    return True
-
 def parse_new(udemy: Udemy, udemy_object: dict):
     total_chapters = udemy_object.get("total_chapters")
     total_lectures = udemy_object.get("total_lectures")
@@ -1790,16 +1754,18 @@ def parse_new(udemy: Udemy, udemy_object: dict):
         os.mkdir(course_dir)
 
     for chapter in udemy_object.get("chapters"):
+        current_chapter_index = int(chapter.get("chapter_index"))
+        # Skip chapters not in the filter if a filter is provided
+        if chapter_filter is not None and current_chapter_index not in chapter_filter:
+            logger.info("Skipping chapter %s as it is not in the specified filter", current_chapter_index)
+            continue
+            
         chapter_title = chapter.get("chapter_title")
         chapter_index = chapter.get("chapter_index")
         chapter_dir = os.path.join(course_dir, chapter_title)
         if not os.path.exists(chapter_dir):
             os.mkdir(chapter_dir)
         logger.info(f"======= Processing chapter {chapter_index} of {total_chapters} =======")
-
-        # Skip if chapter not in range
-        if not is_in_chapter_range(chapter_index):
-            continue
 
         for lecture in chapter.get("lectures"):
             clazz = lecture.get("_class")
@@ -1824,10 +1790,6 @@ def parse_new(udemy: Udemy, udemy_object: dict):
                 extension = lecture_extension
             lecture_file_name = sanitize_filename(lecture_title + "." + extension)
             lecture_path = os.path.join(chapter_dir, lecture_file_name)
-
-            # Skip if lecture not in range
-            if not is_in_lecture_range(chapter_index, index):
-                continue
 
             if not skip_lectures:
                 logger.info(f"  > Processing lecture {index} of {total_lectures}")
@@ -1931,6 +1893,11 @@ def _print_course_info(udemy: Udemy, udemy_object: dict):
 
     chapters = udemy_object.get("chapters")
     for chapter in chapters:
+        current_chapter_index = int(chapter.get("chapter_index"))
+        # Skip chapters not in the filter if a filter is provided
+        if chapter_filter is not None and current_chapter_index not in chapter_filter:
+            continue
+            
         chapter_title = chapter.get("chapter_title")
         chapter_index = chapter.get("chapter_index")
         chapter_lecture_count = chapter.get("lecture_count")

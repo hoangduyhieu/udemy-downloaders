@@ -347,9 +347,22 @@ def pre_run():
     stream = logging.StreamHandler()
     stream.setLevel(LOG_LEVEL)
     stream.setFormatter(console_formatter)
+    
+    # Ensure proper encoding for console output
+    if hasattr(stream, 'setStream'):
+        # For Python 3.7+, we can use setStream with encoding
+        import sys
+        stream.setStream(sys.stdout)
+    else:
+        # For older Python versions, we handle the encoding in the formatter
+        console_formatter = logging.Formatter(
+            fmt=LOG_FORMAT,
+            datefmt=LOG_DATE_FORMAT
+        )
+        stream.setFormatter(console_formatter)
 
-    # create a handler for file logging
-    file_handler = logging.FileHandler(LOG_FILE_PATH)
+    # create a handler for file logging with explicit encoding
+    file_handler = logging.FileHandler(LOG_FILE_PATH, encoding='utf-8')
     file_handler.setFormatter(file_formatter)
 
     # construct the logger
@@ -1748,7 +1761,10 @@ def parse_new(udemy: Udemy, udemy_object: dict):
     logger.info(f"Chapter(s) ({total_chapters})")
     logger.info(f"Lecture(s) ({total_lectures})")
 
-    course_name = str(udemy_object.get("course_id")) if id_as_course_name else udemy_object.get("course_title")
+    # Use the full course title (title) instead of the slug (course_title)
+    course_name = str(udemy_object.get("course_id")) if id_as_course_name else sanitize_filename(udemy_object.get("title"))
+    logger.info(f"> Using full course title for directory name: {course_name}")
+    
     course_dir = os.path.join(DOWNLOAD_DIR, course_name)
     if not os.path.exists(course_dir):
         os.mkdir(course_dir)
@@ -2016,8 +2032,8 @@ def main():
         udemy_object = {}
         udemy_object["bearer_token"] = bearer_token
         udemy_object["course_id"] = course_id
-        udemy_object["title"] = title
-        udemy_object["course_title"] = course_title
+        udemy_object["title"] = title  # This holds the full readable course title
+        udemy_object["course_title"] = course_title  # This holds the URL slug
         udemy_object["chapters"] = []
         chapter_index_counter = -1
 
